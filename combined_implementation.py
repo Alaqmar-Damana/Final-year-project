@@ -126,6 +126,24 @@ def extract_text_with_pytesseract(image_path):
     return text
 
 
+#-------------AUDIO PART----------------------------
+def process_video(video=None, url=None) -> dict[str, str | list]:
+    
+    if url:
+        file_dir = load_video(url)
+    else:
+        file_dir = video
+    # C:\Users\Lenovo\Documents\Youtube\What Is Diabetes  2 Minute Guide  Diabetes UK.mp4
+    # C:\Users\Lenovo\Documents\Youtube\What Is Diabetes?  2 Minute Guide  Diabetes UK.mp4
+    print('Transcribing Video with whisper base model')
+    model = whisper.load_model("base").to('cpu')
+    #print(file_dir)
+    result = model.transcribe(file_dir,fp16=False)
+    #print("helloooo..................")
+    #print(result["text"])
+    return result
+
+
 if __name__=="__main__":
     url = "https://youtu.be/T7xyYCdapAA?si=qTHx--CzzKNglWqu"
     audio_file_path, video_file_path = load_video(url)
