@@ -8,6 +8,7 @@ import torch
 import pytesseract as tess
 from pytesseract import image_to_string 
 from io import BytesIO
+import whisper
 
 tess.pytesseract.tesseract_cmd = r'C:\Users\alaqm\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'
 
@@ -44,7 +45,7 @@ def load_video(url: str) -> (str, str):
 
 #------------------------------------------------------------------------------------------------
 
-def extract_frames(video_path, output_folder, interval_seconds=3):
+def extract_frames(video_path, output_folder, interval_seconds=1):
     # Create output folder if it doesn't exist
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -127,25 +128,17 @@ def extract_text_with_pytesseract(image_path):
 
 
 #-------------AUDIO PART----------------------------
-def process_video(video=None, url=None) -> dict[str, str | list]:
-    
-    if url:
-        file_dir = load_video(url)
-    else:
-        file_dir = video
-    # C:\Users\Lenovo\Documents\Youtube\What Is Diabetes  2 Minute Guide  Diabetes UK.mp4
-    # C:\Users\Lenovo\Documents\Youtube\What Is Diabetes?  2 Minute Guide  Diabetes UK.mp4
+def process_video(filepath):
     print('Transcribing Video with whisper base model')
     model = whisper.load_model("base").to('cpu')
-    #print(file_dir)
-    result = model.transcribe(file_dir,fp16=False)
-    #print("helloooo..................")
-    #print(result["text"])
+    print("hello")
+    result = model.transcribe(filepath,fp16=False)
+    print("world")
     return result
 
 
 if __name__=="__main__":
-    url = "https://youtu.be/T7xyYCdapAA?si=qTHx--CzzKNglWqu"
+    url = "https://youtu.be/osUyjwDwjlg?si=IrZdeVeCh62KgL8C"
     audio_file_path, video_file_path = load_video(url)
     print(audio_file_path)
     print(video_file_path)
@@ -188,4 +181,9 @@ if __name__=="__main__":
         list_of_dictionaries.append({"caption": predicted_caption, "text": extracted_text})
 
     print(list_of_dictionaries)
+
+    #audio part
+    res = process_video(audio_file_path)
+    audio_text = res['text']
+    print(audio_text)
 
