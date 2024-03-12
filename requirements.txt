@@ -13,3 +13,4 @@ pillow
 imagehash
 pytube
 ffmpeg
+openai-whisper==20230314
