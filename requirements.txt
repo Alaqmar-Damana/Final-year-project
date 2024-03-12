@@ -11,3 +11,5 @@ pytesseract
 opencv-python-headless
 pillow
 imagehash
+pytube
+ffmpeg
