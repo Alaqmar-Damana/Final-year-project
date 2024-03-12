@@ -156,14 +156,12 @@ if __name__=="__main__":
     num_beams = 8
     gen_kwargs = {"max_length":max_length,"num_beams":num_beams}
 
+    #get all the files(unique images) in a list from the unique frames folder
     folder_path = "unique_frames"
     files_in_folder = get_files_in_folder(folder_path)
 
 
-    # predicted_captions = predict_caption(files_in_folder)
-    # text_with_pytesseract = extract_text_with_pytesseract(files_in_folder)
-
-
+    #for each image we call the functions for predicting caption and extracting text
     list_of_dictionaries = []
 
     for i in range(len(files_in_folder)):
