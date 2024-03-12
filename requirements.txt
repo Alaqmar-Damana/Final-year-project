@@ -1,3 +1,4 @@
+torch
 langchain
 ipykernel
 openai
@@ -5,4 +6,8 @@ streamlit==1.24.0
 python-env
 PyPDF2
 pandas
-
+transformers
+pytesseract
+opencv-python-headless
+pillow
+imagehash
