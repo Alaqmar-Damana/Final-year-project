@@ -44,7 +44,7 @@ def load_video(url: str) -> (str, str):
 
 #------------------------------------------------------------------------------------------------
 
-def extract_frames(video_path, output_folder, interval_seconds=1):
+def extract_frames(video_path, output_folder, interval_seconds=3):
     # Create output folder if it doesn't exist
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -100,15 +100,13 @@ def get_files_in_folder(folder_path):
     return [os.path.join(folder_path, file) for file in files]
 
 
-def predict_caption(image_paths):
-    images = []
-    for image_path in image_paths:
-        i_image = Image.open(image_path)
-        if i_image.mode != "RGB":
-            i_image = i_image.convert(mode="RGB")
-        images.append(i_image)
+def predict_caption(image_path):
+    i_image = Image.open(image_path)
+    if i_image.mode != "RGB":
+        i_image = i_image.convert(mode="RGB")
+        
     
-    pixel_values = feature_extractor(images=images, return_tensors="pt").pixel_values
+    pixel_values = feature_extractor(images=i_image, return_tensors="pt").pixel_values
 
     pixel_values = pixel_values.to(device)
 
@@ -121,18 +119,15 @@ def predict_caption(image_paths):
     return preds
 
 
-def extract_text_with_pytesseract(image_paths):    
-    extracted_text = []
-    for image_path in image_paths:
-        i_image = Image.open(image_path)
-        text = tess.image_to_string(i_image)
-        print(text)
-        extracted_text.append(text)
-    return extracted_text
+def extract_text_with_pytesseract(image_path):    
+    i_image = Image.open(image_path)
+    text = tess.image_to_string(i_image)
+    print(text)
+    return text
 
 
 if __name__=="__main__":
-    url = "https://youtu.be/4JZ-o3iAJv4?si=S4RFgT_r9eEBXFD7"
+    url = "https://youtu.be/T7xyYCdapAA?si=qTHx--CzzKNglWqu"
     audio_file_path, video_file_path = load_video(url)
     print(audio_file_path)
     print(video_file_path)
@@ -165,9 +160,16 @@ if __name__=="__main__":
     files_in_folder = get_files_in_folder(folder_path)
 
 
-    predicted_captions = predict_caption(files_in_folder)
-    text_with_pytesseract = extract_text_with_pytesseract(files_in_folder)
+    # predicted_captions = predict_caption(files_in_folder)
+    # text_with_pytesseract = extract_text_with_pytesseract(files_in_folder)
 
 
+    list_of_dictionaries = []
 
+    for i in range(len(files_in_folder)):
+        predicted_caption = predict_caption(files_in_folder[i])
+        extracted_text = extract_text_with_pytesseract(files_in_folder[i])
+        list_of_dictionaries.append({"caption": predicted_caption, "text": extracted_text})
+
+    print(list_of_dictionaries)
 
