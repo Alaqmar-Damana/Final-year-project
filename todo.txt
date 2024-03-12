@@ -1,0 +1,5 @@
+-> Threading
+-> merging output of visual and audio
+-> langchain converting to embedding and storing into db
+-> memory element for chatbot
+-> gradio
