@@ -6,7 +6,7 @@ streamlit==1.24.0
 python-env
 PyPDF2
 pandas
-transformers
+transformers==4.30
 pytesseract
 opencv-python-headless
 pillow
@@ -14,3 +14,6 @@ imagehash
 pytube
 ffmpeg
 openai-whisper
+bitsandbytes
+bitsandbytes-cuda117
+accelerate

@@ -9,6 +9,8 @@ import pytesseract as tess
 from pytesseract import image_to_string 
 from io import BytesIO
 import whisper
+import subprocess
+
 
 tess.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
@@ -96,47 +98,6 @@ def remove_duplicates(input_folder, output_folder):
     print(f"{len(hashes)} unique images saved.")
 
 
-def get_files_in_folder(folder_path):
-    files = os.listdir(folder_path)
-    return [os.path.join(folder_path, file) for file in files]
-
-
-def predict_caption(image_path):
-    i_image = Image.open(image_path)
-    if i_image.mode != "RGB":
-        i_image = i_image.convert(mode="RGB")
-        
-    
-    pixel_values = feature_extractor(images=i_image, return_tensors="pt").pixel_values
-
-    pixel_values = pixel_values.to(device)
-
-    output_ids = model.generate(pixel_values, **gen_kwargs)
-
-    preds = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
-
-    preds = [pred.strip() for pred in preds]
-    print("Final Caption is: ",preds)
-    return preds
-
-
-def extract_text_with_pytesseract(image_path):    
-    i_image = Image.open(image_path)
-    text = tess.image_to_string(i_image)
-    print(text)
-    return text
-
-
-#-------------AUDIO PART----------------------------
-def process_video(filepath):
-    print('Transcribing Video with whisper base model')
-    model = whisper.load_model("base").to('cpu')
-    print("hello")
-    result = model.transcribe(filepath,fp16=False)
-    print("world")
-    return result
-
-
 if __name__=="__main__":
     url = "https://youtu.be/osUyjwDwjlg?si=IrZdeVeCh62KgL8C"
     audio_file_path, video_file_path = load_video(url)
@@ -152,38 +113,34 @@ if __name__=="__main__":
     # Remove duplicate frames
     remove_duplicates(output_folder, unique_output_folder)
 
-    #model initialization
-    model = VisionEncoderDecoderModel.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
 
-    feature_extractor = ViTImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
+    # Define the directory containing the images
+    IMG_DIR = os.path.expanduser("E:\\Final-year-project\\unique_frames\\")
 
-    tokenizer = AutoTokenizer.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
+    # Loop through each image in the directory
+    for img in os.listdir(IMG_DIR):
+        if img.endswith(".jpg"):
+            # Extract the base name of the image without extension
+            base_name = os.path.splitext(img)[0]
 
-    device = torch.device("cpu")
+            # Define the output file name based on the image name
+            output_file = os.path.join(IMG_DIR, f"{base_name}.txt")
 
-    model.to(device)
+            # Define the shell command
+            command = [
+                "llama.cpp\\build\\bin\\Debug\\llava-cli.exe",
+                "-m", "ggml-model-q5_k.gguf",
+                "--mmproj", "mmproj-model-f16.gguf",
+                "--temp", "0.1",
+                "-p", "Describe the image in detail.",
+                "--image", os.path.join(IMG_DIR, img)
+            ]
 
-    max_length = 32
-    num_beams = 8
-    gen_kwargs = {"max_length":max_length,"num_beams":num_beams}
+            # Execute the command and save the output to the defined output file
+            with open(output_file, "w") as f:
+                subprocess.run(command, stdout=f)
 
-    #get all the files(unique images) in a list from the unique frames folder
-    folder_path = "unique_frames"
-    files_in_folder = get_files_in_folder(folder_path)
+    print("Process completed successfully.")
 
 
-    #for each image we call the functions for predicting caption and extracting text
-    list_of_dictionaries = []
-
-    for i in range(len(files_in_folder)):
-        predicted_caption = predict_caption(files_in_folder[i])
-        extracted_text = extract_text_with_pytesseract(files_in_folder[i])
-        list_of_dictionaries.append({"caption": predicted_caption, "text": extracted_text})
-
-    print(list_of_dictionaries)
-
-    #audio part
-    res = process_video(audio_file_path)
-    audio_text = res['text']
-    print(audio_text)
 
