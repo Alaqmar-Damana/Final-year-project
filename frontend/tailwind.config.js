@@ -5,5 +5,8 @@ module.exports = {
     extend: {},
   },
   plugins: [],
+  safelist: [
+    ...Array.from({ length: 100 }, (_, i) => i + 1).map(p => `w-[${p}%]`)
+  ]
 }
 

@@ -9,6 +9,16 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  padding: 0;
+  height: 100%;
+  display: flex;
+}
+
+#root {
+  flex: 1;
+  height: 100vh;
+  background-color: black;
+  display: flex;
 }
 
 code {
