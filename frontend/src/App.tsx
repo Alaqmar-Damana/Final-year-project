@@ -1,4 +1,4 @@
-import React, { ChangeEvent, useEffect, useRef, useState } from "react";
+import React, { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import {
   MainContainer,
@@ -9,6 +9,7 @@ import {
   MinChatUiProvider,
 } from "@minchat/react-chat-ui";
 import MessageType from "@minchat/react-chat-ui/dist/types/MessageType";
+import axios from "axios";
 
 function Greeting({ onNext }: { onNext: () => void }) {
   return (
@@ -17,7 +18,7 @@ function Greeting({ onNext }: { onNext: () => void }) {
         VidTalk
       </div>
       <div className="font-semibold text-2xl text-slate-800">
-        It's time we have the talk, right?
+        Empowering Effortless Video Engagement and Information Discovery
       </div>
       <div
         className="bg-slate-800 p-7 py-4 text-white hover:bg-slate-700 rounded-lg shadow-xl shadow-slate-700 hover:shadow-slate-800"
@@ -54,11 +55,12 @@ function ChatUI({ isLoading }: { isLoading: boolean }) {
         },
       },
     ]);
-    setTimeout(() => {
+    try {
+      const response = await axios.get(`http://localhost:5000/get_answer?query=${text}`);
       setMessages((m) => [
         ...m,
         {
-          text: text.toUpperCase(),
+          text: response.data.answer,
           user: {
             id: "bot",
             name: "VidTalk Bot",
@@ -66,7 +68,19 @@ function ChatUI({ isLoading }: { isLoading: boolean }) {
         },
       ]);
       setIsProcessing(false);
-    }, 100);
+    } catch (error) {
+      setMessages((m) => [
+        ...m,
+        {
+          text: "Couldn't comprehend, probably a network error. Please try again after a few minutes, or check your API key.",
+          user: {
+            id: "bot",
+            name: "VidTalk Bot",
+          },
+        },
+      ]);
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -82,6 +96,7 @@ function ChatUI({ isLoading }: { isLoading: boolean }) {
             currentUserId="user"
             messages={messages}
             loading={isLoading}
+            showTypingIndicator={isProcessing}
           />
           <MessageInput
             placeholder="Type message here"
@@ -96,9 +111,11 @@ function ChatUI({ isLoading }: { isLoading: boolean }) {
   );
 }
 
-const fixYTLink = (link: string | null): string => {
+const processYTLinkToEmbedLink = (link: string | null): string => {
   if (link && link.includes("youtu.be")) {
     return link.replace("youtu.be", "youtube.com/embed");
+  } else if(link && link.includes("watch?v=")) {
+    return link.replace("watch?v=", "embed/");
   }
   return link ?? "";
 };
@@ -111,8 +128,10 @@ const EMOJI = {
 function Dashboard() {
   const [link, setLink] = useState("");
 
+  const embedLink = useMemo(() => processYTLinkToEmbedLink(link), [link]);
+
   const onChangeLink = (e: ChangeEvent<HTMLInputElement>) =>
-    setLink(fixYTLink(e.target.value));
+    setLink(e.target.value ?? "");
 
   useEffect(() => console.log("link::", link), [link]);
 
@@ -126,15 +145,44 @@ function Dashboard() {
 
   const interval = useRef<NodeJS.Timer>();
 
-  const onProcess = () => {
+  const [duration, setDuration] = useState<number>(0);
+
+  const checkIfProcessed = useCallback(async () => {
+    const response = await axios.get('http://localhost:5000/is_processing');
+    const isProcessed = response.data.processed === 1;
+    if(isProcessed) {
+      setProcessingStage("processed");
+      setProcessingProgress(100);
+      clearInterval(interval.current);
+    }
+  }, []);
+
+  const updateProcessingProgress = useCallback(() => {
+    if (processingProgress < 99) {
+      setProcessingProgress(p => (p + 1 <= 99 ? p + 1 : 99))
+    } else {
+      setProcessingProgress(99)
+    }
+  }, [processingProgress]);
+
+  useEffect(() => {
+    if(!duration || processingProgress !== 0) return;
+    console.log("duration", duration)
+    interval.current = setInterval(() => {
+      updateProcessingProgress()
+      checkIfProcessed()
+    }, (duration * 1000 * 3) / 100);
+  }, [duration, processingProgress])
+
+  const onProcess = async () => {
     if (interval.current) {
       clearInterval(interval.current);
     }
     setProcessingStage("processing");
     setProcessingProgress(0);
-    interval.current = setInterval(() => {
-      setProcessingProgress((p) => p + 1);
-    }, 1000);
+    const response = await axios.get(`http://localhost:5000/update_vid_link?link=${link}`);
+    console.log("response::", response.data.length)
+    setDuration(response.data.length);
   };
 
   useEffect(() => {
@@ -150,12 +198,12 @@ function Dashboard() {
         <div className="text-2xl font-semibold">
           Enter the link of a video to process:
         </div>
-        {link && (
+        {embedLink && (
           <iframe
             title="yt-video"
             className="h-[30%] w-[60%] rounded-2xl"
-            src={link}
-          ></iframe>
+            src={embedLink}
+          />
         )}
         <input
           type="text"
@@ -170,16 +218,16 @@ function Dashboard() {
         >
           Process
         </button>
-        {processingStage !== "unprocessed" && (
+        {processingStage !== "unprocessed" && duration && (
           <>
             <div className="mt-10 text-slate-800 text-2xl">
               {processingStage[0].toUpperCase() + processingStage.substring(1)}
-              {processingStage === "processing" ? "..." : ""}
+              {processingStage === "processing" ? `... (${processingProgress} %) ` : ""}
               {EMOJI[processingStage]}
             </div>
             <div className="w-full h-3 bg-slate-300 rounded-full overflow-hidden">
               <div
-                className={`bg-green-800 h-full w-[${processingProgress}%]`}
+                className={`bg-green-800 h-full ${processingProgress ? `w-[${processingProgress}%]` : 'w-0'}`}
               />
             </div>
           </>

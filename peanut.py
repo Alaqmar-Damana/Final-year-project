@@ -1,7 +1,8 @@
 import cv2
-import os
+import os, shutil
 from PIL import Image
 import imagehash
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pytube import YouTube
 from transformers import VisionEncoderDecoderModel, ViTImageProcessor, AutoTokenizer
 import torch
@@ -10,10 +11,13 @@ from pytesseract import image_to_string
 from io import BytesIO
 import whisper
 import re
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain.vectorstores import Chroma
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain.chains import ConversationalRetrievalChain
+from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
+from langchain_community.document_loaders import TextLoader
 
 tess.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
@@ -21,10 +25,15 @@ tess.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 class PeanutBot():
     def __init__(self, url) -> None:
+        
+        self.delete_folders()
+        self.url = url
         self.chat_history = []
         audio_file_path, video_file_path = self.load_video(url)
         print(audio_file_path)
         print(video_file_path)
+        
+        self.is_processing_complete = False
 
         output_folder = "output_frames"
         unique_output_folder = "unique_frames"
@@ -34,21 +43,23 @@ class PeanutBot():
 
         # Remove duplicate frames
         self.remove_duplicates(output_folder, unique_output_folder)
+        
+        self.llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
 
         #model initialization
-        self.model = VisionEncoderDecoderModel.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
+        # self.model = VisionEncoderDecoderModel.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
 
-        self.feature_extractor = ViTImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
+        # self.feature_extractor = ViTImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
 
-        self.tokenizer = AutoTokenizer.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
+        # self.tokenizer = AutoTokenizer.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
 
-        self.device = torch.device("cpu")
+        # self.device = torch.device("cpu")
 
-        self.model.to(self.device)
+        # self.model.to(self.device)
 
-        max_length = 32
-        num_beams = 8
-        self.gen_kwargs = {"max_length":max_length,"num_beams":num_beams}
+        # max_length = 32
+        # num_beams = 8
+        # self.gen_kwargs = {"max_length":max_length,"num_beams":num_beams}
 
         #get all the files(unique images) in a list from the unique frames folder
         folder_path = "unique_frames"
@@ -59,9 +70,9 @@ class PeanutBot():
         list_of_dictionaries = []
 
         for i in range(len(files_in_folder)):
-            predicted_caption = self.predict_caption(files_in_folder[i])
+            # predicted_caption = self.predict_caption(files_in_folder[i])
             extracted_text = self.extract_text_with_pytesseract(files_in_folder[i])
-            list_of_dictionaries.append({"caption": predicted_caption, "text": extracted_text})
+            list_of_dictionaries.append({"text": extracted_text})
 
         print(list_of_dictionaries)
 
@@ -77,17 +88,27 @@ class PeanutBot():
 
         #chain
         self.make_chain(clean_combined_text)
-    
+        
+    def delete_folders(self):
+        if os.path.isdir("output_frames"):
+            shutil.rmtree("output_frames")
+        if os.path.isdir("unique_frames"):
+            shutil.rmtree("unique_frames")
+
     def generateResponse(self, query):
-        result = self.question_answer(query, chain)
+        result = self.qa.run(query)
         print(result)
         print("Question: ", query)
         print("Answer: ", result)
         return result
 
+    def video_duration_in_seconds(self) -> int:
+        return self.video_length_in_seconds
+
     #function to download audio and video and return the paths
     def load_video(self, url: str) -> tuple[str, str]:
         yt = YouTube(url)
+        self.video_length_in_seconds = yt.length
         current_folder = os.getcwd()
         target_dir = os.path.join(current_folder, 'Youtube')
         if not os.path.exists(target_dir):
@@ -174,23 +195,23 @@ class PeanutBot():
         return [os.path.join(folder_path, file) for file in files]
 
 
-    def predict_caption(self, image_path):
-        i_image = Image.open(image_path)
-        if i_image.mode != "RGB":
-            i_image = i_image.convert(mode="RGB")
+    # def predict_caption(self, image_path):
+    #     i_image = Image.open(image_path)
+    #     if i_image.mode != "RGB":
+    #         i_image = i_image.convert(mode="RGB")
 
 
-        pixel_values = self.feature_extractor(images=i_image, return_tensors="pt").pixel_values
+    #     pixel_values = self.feature_extractor(images=i_image, return_tensors="pt").pixel_values
 
-        pixel_values = pixel_values.to(self.device)
+    #     pixel_values = pixel_values.to(self.device)
 
-        output_ids = self.model.generate(pixel_values, **self.gen_kwargs)
+    #     output_ids = self.model.generate(pixel_values, **self.gen_kwargs)
 
-        preds = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+    #     preds = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)
 
-        preds = [pred.strip() for pred in preds]
-        print("Final Caption is: ",preds)
-        return preds
+    #     preds = [pred.strip() for pred in preds]
+    #     print("Final Caption is: ",preds)
+    #     return preds
 
 
     def extract_text_with_pytesseract(self, image_path):    
@@ -214,9 +235,9 @@ class PeanutBot():
     def combine_list_of_dict_audio_text(self, dict_list, audio_text):
         combined_text = ""
         for item in dict_list:
-            caption = item.get("caption","")
+            #caption = item.get("caption","")
             text = item.get("text","")
-            combined_text += caption[0] + " " + text + " "
+            combined_text += text + " "
         combined_text += audio_text
         return combined_text
 
@@ -229,24 +250,59 @@ class PeanutBot():
         print(text)
         return text
 
-
+    def isProcessed(self):
+        return self.is_processing_complete
 
     def make_chain(self, text):
-        global chain
-        vector_stores = Chroma.from_texts(texts = text, embedding=OpenAIEmbeddings())
-        chain = ConversationalRetrievalChain.from_llm(ChatOpenAI(temperature=0.5),
-                                                      retriever=vector_stores.as_retriever(search_kwargs={"k":5}),
-                                                      return_source_documents = True)
-        return chain
+        file_name = "output1234.txt"
 
-    def question_answer(self, query, chain):
-        global chat_history
-        result = chain({"question":query, "chat_history":chat_history}, return_only_outputs=True)
-        chat_history += [(query, result["answer"])]
-        return result["answer"]
+# Open the file in write mode ('w' mode)
+        with open(file_name, 'w') as file:
+            # Write the string to the file
+            file.write(text)
 
-peanuts = PeanutBot("https://youtu.be/osUyjwDwjlg?si=IrZdeVeCh62KgL8C")
+        print("String has been written to the file:", file_name)
+        loader = TextLoader("output1234.txt")
+        docs = loader.load()
+        llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        splits = text_splitter.split_documents(docs)
+        vector_stores = Chroma.from_documents(documents=splits, embedding=OpenAIEmbeddings())
+                # self.chain = ConversationalRetrievalChain.from_llm(ChatOpenAI(temperature=0.5),
+                #                                               retriever=vector_stores.as_retriever(search_kwargs={"k":5}),
+                #                                               return_source_documents = True)
+                
+        retriever = vector_stores.as_retriever()
+        prompt_template = """Use the following pieces of context to answer the question at the end. 
+If you don't know the answer, just say that you don't know, don't try to make up an answer.
+##YOU SHOULD ONLY ANSWER THE QUESTION IF IT IS IN GIVEN CONTEXT OTHERWISE DO NOT ANSWER##
 
-while True:
-    q = input("Ask::")
-    print(f'Answer::{peanuts.generateResponse(q)}')
+{context}
+
+Question: {question}
+"""
+        PROMPT = PromptTemplate(
+            template=prompt_template, input_variables=["context", "question"]
+        )
+        chain_type_kwargs = {"prompt": PROMPT}
+        self.qa = RetrievalQA.from_chain_type(
+            self.llm,
+            chain_type="stuff",
+            retriever=retriever,
+            chain_type_kwargs=chain_type_kwargs   # pass kwargs here
+        )
+        self.is_processing_complete = True
+        print("Processing complete on the video", self.url)
+        # return self.chain
+
+    # def question_answer(self, query):
+    #     print(self.chain)
+    #     result = self.chain({"question":query, "chat_history":self.chat_history}, return_only_outputs=True)
+    #     self.chat_history += [(query, result["answer"])]
+    #     return result["answer"]
+
+# peanuts = PeanutBot("https://youtu.be/osUyjwDwjlg?si=RS9Cap8A4wnksW9N")
+
+# while True:
+#     q = input("Ask::")
+#     print(f'Answer::{peanuts.generateResponse(q)}')
