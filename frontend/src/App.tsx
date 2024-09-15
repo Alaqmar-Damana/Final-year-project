@@ -1,4 +1,4 @@
-import React, { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import {
   MainContainer,
@@ -114,7 +114,7 @@ function ChatUI({ isLoading }: { isLoading: boolean }) {
 const processYTLinkToEmbedLink = (link: string | null): string => {
   if (link && link.includes("youtu.be")) {
     return link.replace("youtu.be", "youtube.com/embed");
-  } else if(link && link.includes("watch?v=")) {
+  } else if (link && link.includes("watch?v=")) {
     return link.replace("watch?v=", "embed/");
   }
   return link ?? "";
@@ -129,6 +129,9 @@ function Dashboard() {
   const [link, setLink] = useState("");
 
   const embedLink = useMemo(() => processYTLinkToEmbedLink(link), [link]);
+
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
 
   const onChangeLink = (e: ChangeEvent<HTMLInputElement>) =>
     setLink(e.target.value ?? "");
@@ -150,7 +153,7 @@ function Dashboard() {
   const checkIfProcessed = useCallback(async () => {
     const response = await axios.get('http://localhost:5000/is_processing');
     const isProcessed = response.data.processed === 1;
-    if(isProcessed) {
+    if (isProcessed) {
       setProcessingStage("processed");
       setProcessingProgress(100);
       clearInterval(interval.current);
@@ -166,7 +169,7 @@ function Dashboard() {
   }, [processingProgress]);
 
   useEffect(() => {
-    if(!duration || processingProgress !== 0) return;
+    if (!duration || processingProgress !== 0) return;
     console.log("duration", duration)
     interval.current = setInterval(() => {
       updateProcessingProgress()
@@ -181,9 +184,54 @@ function Dashboard() {
     setProcessingStage("processing");
     setProcessingProgress(0);
     const response = await axios.get(`http://localhost:5000/update_vid_link?link=${link}`);
-    console.log("response::", response.data.length)
+    console.log("response-link::", response.data.length)
     setDuration(response.data.length);
   };
+
+  const handleButtonClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files.length > 0) {
+      const file = event.target.files[0];
+      setSelectedFile(file);
+      const url = URL.createObjectURL(file);
+      setLink(url)
+    }
+  };
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!selectedFile) {
+      return;
+    }
+
+    console.log("yo", selectedFile.name)
+
+    const handleUpload = async () => {
+      if (interval.current) {
+        clearInterval(interval.current);
+      }
+      setProcessingStage("processing");
+      setProcessingProgress(0);
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const response = await axios.post('http://localhost:5000/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      })
+      console.log("response-file::", response.data.length)
+      setDuration(response.data.length);
+    };
+    handleUpload();
+  }, [selectedFile]);
 
   useEffect(() => {
     if (processingProgress >= 100) {
@@ -211,13 +259,23 @@ function Dashboard() {
           className="border-4 outline-none focus:border-slate-800 text-slate-800 text-2xl p-2 w-full rounded-xl"
           onChange={onChangeLink}
         />
-        <button
-          className="bg-slate-800 p-7 py-4 text-white hover:bg-slate-700 rounded-full shadow-xl shadow-slate-700 hover:shadow-slate-800 font-bold text-xl"
-          disabled={false}
-          onClick={onProcess}
-        >
-          Process
-        </button>
+        <div className="flex flex-row gap-5">
+          <button
+            className="bg-slate-800 p-7 py-4 text-white hover:bg-slate-700 rounded-full shadow-xl shadow-slate-700 hover:shadow-slate-800 font-bold text-xl"
+            disabled={false}
+            onClick={onProcess}
+          >
+            Process
+          </button>
+          <input type="file" onChange={handleFileChange} hidden ref={fileInputRef} />
+          <button
+            className="bg-slate-800 p-7 py-4 text-white hover:bg-slate-700 rounded-full shadow-xl shadow-slate-700 hover:shadow-slate-800 font-bold text-xl"
+            disabled={false}
+            onClick={handleButtonClick}
+          >
+            Browse
+          </button>
+        </div>
         {processingStage !== "unprocessed" && duration && (
           <>
             <div className="mt-10 text-slate-800 text-2xl">

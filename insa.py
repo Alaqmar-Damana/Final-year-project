@@ -2,6 +2,7 @@ import cv2
 import os, shutil
 from PIL import Image
 import imagehash
+from moviepy.editor import VideoFileClip
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pytube import YouTube
 from transformers import VisionEncoderDecoderModel, ViTImageProcessor, AutoTokenizer
@@ -11,6 +12,7 @@ from pytesseract import image_to_string
 from io import BytesIO
 import whisper
 import re
+import yt_dlp
 from langchain_openai import OpenAIEmbeddings
 from langchain.vectorstores import Chroma
 from langchain_openai import ChatOpenAI
@@ -20,20 +22,32 @@ from langchain.prompts import PromptTemplate
 from langchain_community.document_loaders import TextLoader
 from dotenv import load_dotenv, find_dotenv
 
-# load_dotenv(find_dotenv())
+#load_dotenv(find_dotenv())
 
 tess.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 api_key = os.getenv("OPENAI_API_KEY")
+os.environ["OPENAI_API_KEY"] = api_key
 
 # "https://youtu.be/osUyjwDwjlg?si=IrZdeVeCh62KgL8C"
 
 class PeanutBot():
-    def __init__(self, url) -> None:
+    def __init__(self, url=None, video=None) -> None:
         
         self.delete_folders()
-        self.url = url
+        if url:
+            print("url part executed")
+            self.url = url
+            audio_file_path, video_file_path = self.load_video(url)
+        else:
+            print("upload part executed")
+            video_file_path = video
+            audio_file_path = video[:-3]+"mp3"
+            self.convert_video_to_audio(video,audio_file_path)
+            
+            
+        
         self.chat_history = []
-        audio_file_path, video_file_path = self.load_video(url)
+        
         print(audio_file_path)
         print(video_file_path)
         
@@ -48,7 +62,7 @@ class PeanutBot():
         # Remove duplicate frames
         self.remove_duplicates(output_folder, unique_output_folder)
         
-        self.llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
+        self.llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0, openai_api_key=api_key)
 
         #model initialization
         # self.model = VisionEncoderDecoderModel.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
@@ -98,6 +112,16 @@ class PeanutBot():
             shutil.rmtree("output_frames")
         if os.path.isdir("unique_frames"):
             shutil.rmtree("unique_frames")
+    
+    def convert_video_to_audio(self, video_file, audio_file):
+        try:
+            video_clip = VideoFileClip(video_file)
+            audio_clip = video_clip.audio
+            audio_clip.write_audiofile(audio_file)
+            video_clip.close()
+        except Exception as e:
+            print("Error:", e)
+
 
     def generateResponse(self, query):
         result = self.qa.run(query)
@@ -111,35 +135,55 @@ class PeanutBot():
 
     #function to download audio and video and return the paths
     def load_video(self, url: str) -> tuple[str, str]:
-        yt = YouTube(url)
-        self.video_length_in_seconds = yt.length
-        current_folder = os.getcwd()
-        target_dir = os.path.join(current_folder, 'Youtube')
-        if not os.path.exists(target_dir):
-            os.mkdir(target_dir)
+        try:
+            # Set up directories
+            current_folder = os.getcwd()
+            target_dir = os.path.join(current_folder, 'Youtube')
+            if not os.path.exists(target_dir):
+                os.mkdir(target_dir)
 
-        audio_file_path = os.path.join(target_dir, f"{yt.title}_audio.mp3")
-        video_file_path = os.path.join(target_dir, f"{yt.title}_video.mp4")
+            # Video options for yt-dlp
+            ydl_opts = {
+                'format': 'bestvideo+bestaudio/best',  # Best video and audio
+                'outtmpl': os.path.join(target_dir, '%(title)s.%(ext)s'),  # Save path
+                'postprocessors': [{
+                    'key': 'FFmpegVideoConvertor',  # Ensure conversion to mp4
+                    'preferedformat': 'mp4'
+                }]
+            }
 
-        # Check if files already exist
-        if os.path.exists(audio_file_path) and os.path.exists(video_file_path):
+            # Audio options for yt-dlp
+            ydl_audio_opts = {
+                'format': 'bestaudio/best',  # Best audio
+                'outtmpl': os.path.join(target_dir, '%(title)s_audio.%(ext)s'),  # Save path
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',  # Extract audio
+                    'preferredcodec': 'mp3',  # Convert to mp3
+                    'preferredquality': '192',  # Set bitrate
+                }]
+            }
+
+            # Download video
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                print('----DOWNLOADING VIDEO FILE----')
+                ydl.download([url])
+
+            # Download audio
+            with yt_dlp.YoutubeDL(ydl_audio_opts) as ydl:
+                print('----DOWNLOADING AUDIO FILE----')
+                ydl.download([url])
+
+            # Set file paths based on the video title
+            video_info = yt_dlp.YoutubeDL().extract_info(url, download=False)
+            video_title = video_info['title']
+            video_file_path = os.path.join(target_dir, f"{video_title}.mp4")
+            audio_file_path = os.path.join(target_dir, f"{video_title}_audio.mp3")
+
             return audio_file_path, video_file_path
 
-        try:
-            # Download audio stream
-            audio_stream = yt.streams.filter(only_audio=True).first()
-            print('----DOWNLOADING AUDIO FILE----')
-            audio_stream.download(output_path=target_dir, filename=f"{yt.title}_audio.mp3")
-
-            # Download video stream
-            video_stream = yt.streams.filter(progressive=True, file_extension='mp4').first()
-            print('----DOWNLOADING VIDEO FILE----')
-            video_stream.download(output_path=target_dir, filename=f"{yt.title}_video.mp4")
-
         except Exception as e:
-            print('Issue in Downloading video')
-
-        return audio_file_path, video_file_path
+            print(f"Issue in Downloading video: {e}")
+            return None, None
 
     #------------------------------------------------------------------------------------------------
 
@@ -150,9 +194,20 @@ class PeanutBot():
 
         # Open the video file
         vidcap = cv2.VideoCapture(video_path)
+        
+        # Check if the video was opened successfully
+        if not vidcap.isOpened():
+            print(f"Error: Could not open video file {video_path}")
+            return
+
+        # Get frame rate and check if it's valid
+        frame_rate = vidcap.get(cv2.CAP_PROP_FPS)
+        if frame_rate == 0:
+            print(f"Error: Unable to get FPS for video {video_path}")
+            return
+        
         success, image = vidcap.read()
         count = 0
-        frame_rate = vidcap.get(cv2.CAP_PROP_FPS)
         interval_frames = int(frame_rate * interval_seconds)
 
         # Loop through the video and extract frames
@@ -271,7 +326,7 @@ class PeanutBot():
         llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0, openai_api_key=api_key)
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         splits = text_splitter.split_documents(docs)
-        vector_stores = Chroma.from_documents(documents=splits, embedding=OpenAIEmbeddings())
+        vector_stores = Chroma.from_documents(documents=splits, embedding=OpenAIEmbeddings(openai_api_key=api_key))
                 # self.chain = ConversationalRetrievalChain.from_llm(ChatOpenAI(temperature=0.5),
                 #                                               retriever=vector_stores.as_retriever(search_kwargs={"k":5}),
                 #                                               return_source_documents = True)
@@ -296,7 +351,8 @@ Question: {question}
             chain_type_kwargs=chain_type_kwargs   # pass kwargs here
         )
         self.is_processing_complete = True
-        print("Processing complete on the video", self.url)
+        
+        print("Processing complete on the video")
         # return self.chain
 
     # def question_answer(self, query):
@@ -305,8 +361,8 @@ Question: {question}
     #     self.chat_history += [(query, result["answer"])]
     #     return result["answer"]
 
-peanuts = PeanutBot("https://youtu.be/osUyjwDwjlg?si=RS9Cap8A4wnksW9N")
+# peanuts = PeanutBot(video="Youtube\Blood Moon explained in 20 seconds_video.mp4")
 
-while True:
-    q = input("Ask::")
-    print(f'Answer::{peanuts.generateResponse(q)}')
+# while True:
+#     q = input("Ask::")
+#     print(f'Answer::{peanuts.generateResponse(q)}')

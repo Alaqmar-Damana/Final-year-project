@@ -12,3 +12,4 @@ ggml-model-q5_k.gguf
 mmproj-model-f16.gguf
 output1234.txt
 /__pycache__
+.env
